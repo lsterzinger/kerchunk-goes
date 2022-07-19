@@ -25,6 +25,7 @@ import argparse
 parser = argparse.ArgumentParser(description="Kercunk GOES data on S3")
 parser.add_argument('-p', '--product', required=True, type=str, default='ABI-L2-ACMC', help='GOES product to process (default ABI-L2-ACMC)')
 # parser.add_argument('-f', '--file', required=False, type=str, default='*', help='File wildcard (default all files \"*\")')
+parser.add_argument('--remove-bad-chunks', required=False, default=False, action='store_true', help="Remove chunks that are not [300, 250]")
 parser.add_argument('-c', '--channel', required=False, type=int, default=None, help="L1b channel")
 parser.add_argument('-m', '--mode', required=False, type=int, default=6, help="L1b mode")
 parser.add_argument('-y', '--year', required=True, type=int, help="Year of data to process")
@@ -44,6 +45,7 @@ day1 = args['days'][0]
 day2 = args['days'][1]
 chan = args['channel']
 mode = args['mode']
+remove_bad_chunks = args['remove_bad_chunks']
 
 ncpu = args['ncpu']
 njobs = args['njobs']
@@ -118,6 +120,27 @@ if __name__ == '__main__':
 #        with open(f'jsons/{name}.json','w') as outf:
 #            outf.write(ujson.dumps(d))
 
+
+    # Remove bad chunks
+    if remove_bad_chunks:
+        print("Removing bad chunks")
+        len1 = len(dicts)
+        remove = [None]
+        while len(remove) > 0:
+            remove = []
+            for i,j in enumerate(dicts):
+                c= ujson.loads(j['refs']['DQF/.zarray'])['chunks']
+            
+                if c != [300, 250]:
+                    print(f"Bad chunk found in #{i}: {flist[i]}")
+                    # print(f"\tThis is file {j['templates']['u']}")
+                    # print("Marking for removal from json list")
+                    remove.append(i)
+            for i in remove:
+                dicts.pop(i)
+        len2 = len(dicts)
+
+
     # Combine all references into single file and write to disk
     print("Combining into single reference")
     mzz = MultiZarrToZarr(
@@ -128,7 +151,9 @@ if __name__ == '__main__':
         remote_options={'anon':True}
     )
 
-    mzz.translate(f"{product}-{year}-{day}.json")
+    mzz.translate(f"{product}-{year}-{day1}.json")
 
     t2 = datetime.now()
     print(f"Done! This script took {(t2 - t1).total_seconds()} seconds")
+    if remove_bad_chunks:
+        print(f"Excluded {len1-len2} incorrectly chunked files")
